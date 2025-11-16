@@ -10,11 +10,11 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Clock, AlertCircle, Send, CheckCircle2 } from 'lucide-react';
+import { Clock, AlertCircle, Send, CheckCircle2, ShieldAlert } from 'lucide-react';
 import { use } from 'react';
+import { toast } from 'sonner';
 
 export default function QuizPage({ params }: { params: Promise<{ id: string }> }) {
-  // ✅ Unwrap params menggunakan React.use()
   const resolvedParams = use(params);
   const router = useRouter();
   const [submission, setSubmission] = useState<Submission | null>(null);
@@ -22,6 +22,7 @@ export default function QuizPage({ params }: { params: Promise<{ id: string }> }
   const [timeLeft, setTimeLeft] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [tabSwitchCount, setTabSwitchCount] = useState(0); // ✅ Track tab switches
 
   useEffect(() => {
     if (resolvedParams.id) {
@@ -44,6 +45,77 @@ export default function QuizPage({ params }: { params: Promise<{ id: string }> }
 
     return () => clearInterval(timer);
   }, [timeLeft]);
+
+  // ✅ Proteksi Anti-Cheat
+  useEffect(() => {
+    // Disable right click
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      toast.error('Klik kanan dinonaktifkan selama tes', {
+        duration: 2000,
+      });
+    };
+
+    // Detect copy/paste
+    const handleCopy = (e: ClipboardEvent) => {
+      e.preventDefault();
+      toast.error('Copy text dinonaktifkan selama tes', {
+        duration: 2000,
+      });
+    };
+
+    // Detect tab switch / window blur
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        setTabSwitchCount(prev => {
+          const newCount = prev + 1;
+          toast.warning(`Peringatan: Jangan pindah tab/window! (${newCount}x)`, {
+            duration: 3000,
+            icon: <ShieldAlert className="h-5 w-5" />,
+          });
+          
+          if (newCount >= 3) {
+            toast.error('Terlalu banyak pindah tab! Tes akan otomatis disubmit.', {
+              duration: 5000,
+            });
+            setTimeout(() => {
+              handleSubmit();
+            }, 2000);
+          }
+          
+          return newCount;
+        });
+      }
+    };
+
+    // Detect keyboard shortcuts (Ctrl+C, Ctrl+A, dll)
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Prevent Ctrl+C, Ctrl+A, Ctrl+X, Ctrl+U, F12
+      if (
+        (e.ctrlKey && (e.key === 'c' || e.key === 'a' || e.key === 'x' || e.key === 'u')) ||
+        e.key === 'F12'
+      ) {
+        e.preventDefault();
+        toast.error('Shortcut keyboard dinonaktifkan', {
+          duration: 2000,
+        });
+      }
+    };
+
+    // Add event listeners
+    document.addEventListener('contextmenu', handleContextMenu);
+    document.addEventListener('copy', handleCopy);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('keydown', handleKeyDown);
+
+    // Cleanup
+    return () => {
+      document.removeEventListener('contextmenu', handleContextMenu);
+      document.removeEventListener('copy', handleCopy);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   const fetchSubmission = async () => {
     try {
@@ -154,8 +226,27 @@ export default function QuizPage({ params }: { params: Promise<{ id: string }> }
   const questions = submission?.questions as Question[];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 py-8 px-4">
+    <div 
+      className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 py-8 px-4 select-none"
+      style={{
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+        MozUserSelect: 'none',
+        msUserSelect: 'none',
+      }}
+    >
       <div className="max-w-4xl mx-auto">
+        {/* Anti-Cheat Warning */}
+        {tabSwitchCount > 0 && (
+          <Alert className="mb-4 border-red-500 bg-red-50">
+            <ShieldAlert className="h-4 w-4 text-red-600" />
+            <AlertDescription className="text-red-900">
+              <strong>Peringatan!</strong> Anda telah pindah tab/window sebanyak{' '}
+              <strong>{tabSwitchCount} kali</strong>. Jika lebih dari 3 kali, tes akan otomatis disubmit.
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Header with Timer */}
         <Card className="mb-6 shadow-lg border-0">
           <CardContent className="pt-6">
@@ -163,7 +254,7 @@ export default function QuizPage({ params }: { params: Promise<{ id: string }> }
               <div className="flex-1">
                 <h1 className="text-2xl font-bold text-gray-900 mb-1">Quiz CSS Dasar</h1>
                 <p className="text-sm text-muted-foreground">
-                  Jawab semua soal berdasarkan kode yang Anda submit
+                  Jawab semua soal berdasarkan pemahaman Anda
                 </p>
               </div>
               <div className="text-right">
@@ -188,6 +279,15 @@ export default function QuizPage({ params }: { params: Promise<{ id: string }> }
             </div>
           </CardContent>
         </Card>
+
+        {/* Info Box */}
+        <Alert className="mb-6 border-blue-200 bg-blue-50">
+          <AlertCircle className="h-4 w-4 text-blue-600" />
+          <AlertDescription className="text-blue-900 text-sm">
+            <strong>Mode Tes Aktif:</strong> Seleksi teks, copy, dan klik kanan dinonaktifkan.
+            Jangan pindah tab/window atau tes akan otomatis disubmit.
+          </AlertDescription>
+        </Alert>
 
         {/* Questions */}
         <div className="space-y-4">
